@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  postgresdb:
+    image: postgres:latest
+    container_name: postgres_db_auth_service
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auth_service
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    expose:
+      - "5432: 5433"
+    networks:
+      - health_reminder_network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./auth_service/app/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  mongodb:
+    image: mongo:4.2.2
+    container_name: mongodb
+    ports:
+      - 27017:27017
+    volumes:
+      - ./mongodata:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: secret
+    healthcheck:
+      test: ["CMD", "mongo", "--username", "admin", "--password", "secret", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - health_reminder_network
+
+  redis:
+    image: redis:7
+    container_name: redis_container
+    ports:
+      - 6379:6379
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - health_reminder_network
+
+  auth_service:
+    container_name: auth_service
+    build: auth_service/
+    ports: 
+      - 8000:8000
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgresdb: 
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/auth_service
+      REDIS_HOST: redis
+      POSTGRES_HOST: postgresdb
+    networks:
+      - health_reminder_network
+
+  core_service:
+    container_name: core_services
+    build: core_services/
+    ports:
+      - 8001:8001
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+
+    environment:
+      REDIS_HOST: redis
+      MONGO_CLIENT_URI: mongodb
+      DATABASE_URL: mongodb://admin:secret@mongodb:27017
+    volumes:
+      - .:/app
+    networks:
+      - health_reminder_network
+
+  appointment_service:
+    container_name: appointment_service
+    build: appointment_service/
+    ports:
+      - 8003:8003
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: redis
+    volumes:
+      - .:/app
+    networks:
+      - health_reminder_network
+
+volumes:
+    postgres_data:
+
+networks:
+  health_reminder_network:
+    driver: bridge
