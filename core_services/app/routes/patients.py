@@ -27,22 +27,29 @@ async def get_patient_info(request: Request, authorization: str = Header(None)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: You are not authorized to access this resource."
         )
-    response = requests.get(
-        url=f"http://127.0.0.1:8000/login/get_user/{id}",
-        headers={"Authorization": f"Bearer {authorization}"}
-    )
-    data = response.json()
-    # print(data)
-    user_data = {}
-    user_data["id"] = data[0]
-    user_data["name"] = data[1]
-    user_data["email"] = data[2]
+    
+    cache = request.app.state.redis_client.get(f"patients/me/{id}")
+    if cache:
+        return json.loads(cache)
+    else:
+        response = requests.get(
+            url=f"http://auth_service:8000/login/get_user/{id}",
+            headers={"Authorization": f"Bearer {authorization}"}
+        )
+        data = response.json()
+        # print(data)
+        user_data = {}
+        user_data["id"] = data[0]
+        user_data["name"] = data[1]
+        user_data["email"] = data[2]
 
-    db = request.app.state.client["patients"]
-    patient_collection = "patients_collection"
-    res = await patients.insert_data(db, patient_collection, user_data)
-    print(res)
-    return response.json()
+        db = request.app.state.client["patients"]
+        patient_collection = "patients_collection"
+        res = await patients.insert_data(db, patient_collection, user_data)
+        print(res)
+        request.app.state.redis_client.set(f"patients/me/{id}", json.dumps(user_data))
+
+        return response.json()
 
 @router.put("/me/update", status_code=status.HTTP_200_OK)
 async def update_patient_info(request: Request, authorization: str = Header(None), user_data: dict = None):
@@ -67,6 +74,7 @@ async def update_patient_info(request: Request, authorization: str = Header(None
         patient_collection = "patients_collection"
         res = await patients.update_data(db, patient_collection, user_data)
         print(res)
+        request.app.state.redis_client.delete(f"patients/me/{user_data['id']}")
         return {"message": "Patient information updated successfully"}
 
         

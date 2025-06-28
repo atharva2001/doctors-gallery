@@ -57,25 +57,32 @@ async def get_user(id: str, request: Request):
     
     if not res or "sub" not in res:
         raise HTTPException(status_code=401, detail="Invalid token")
-    print(res)
-    cursor = request.app.state.client.cursor()
-    response = await login.get_user_by_id(cursor, id)
     
-    if "error" in response:
-        raise HTTPException(status_code=404, detail=response["error"])
+    cache = request.app.state.redis_client.get(f"login/get_user/{id}")
+    if cache:
+        return json.loads(cache)
+    else:
 
-    return response
+        cursor = request.app.state.client.cursor()
+        response = await login.get_user_by_id(cursor, id)
+        
+        if "error" in response:
+            raise HTTPException(status_code=404, detail=response["error"])
+        
+        request.app.state.redis_client.set(f"login/get_user/{id}", json.dumps(response))
+
+        return response
 
 
 @router.get("/get_all_users", status_code=status.HTTP_200_OK)
 async def get_all_users(request: Request):
-    cache = request.app.state.redis_client.get("get_all_users")
+    cache = request.app.state.redis_client.get("login/get_all_users")
     if cache:
         return {"users": cache}
     else:
         cursor = request.app.state.client.cursor()
         response = await login.get_all_users(cursor)
-        request.app.state.redis_client.set("get_all_users", json.dumps(response))
+        request.app.state.redis_client.set("login/get_all_users", json.dumps(response))
     
     if "error" in response:
         raise HTTPException(status_code=404, detail=response["error"])
@@ -91,6 +98,7 @@ async def delete_user(id: str, request: Request):
         if "error" in response:
             raise HTTPException(status_code=404, detail=response["error"])
         
-        request.app.state.redis_client.delete("get_all_users")
+        request.app.state.redis_client.delete("login/get_all_users")
+        request.app.state.redis_client.delete(f"login/get_user/{id}")
         return response
     return {"message": "User not found."}

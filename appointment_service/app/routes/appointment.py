@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.database.core import get_db
 from app.database.appointment import Appointment as AppointmentModel
 from app.database.slots import Slot as SlotModel
+import json
 
 router = APIRouter(
     prefix="/appointments",
@@ -23,18 +24,38 @@ def get_pagination_params(
 async def get_all_appointments(request: Request, db: Session=Depends(get_db), authorization: str = Header(None), pagination: dict = Depends(get_pagination_params), response: Response = None):
     # Placeholder for fetching all appointments
     page = pagination["page"]
-    per_page = pagination["per_page"]
-    
+    per_page = pagination["per_page"]  
+    cache = request.app.state.redis_client.get(f"appointment/all_appointments")
     start = (page - 1) * per_page
     end = start + per_page
 
-    result = appointment.get_all_appointments(db)
-    response.headers["X-Total-Count"] = str(len(result))
-    response.headers["X-Page"] = str(page)
-    response.headers["X-Per-Page"] = str(per_page)
-    
+    if cache:
+        data = json.loads(cache)
+        return data[start:end] if data else []
+    else:
+        
+        
 
-    return result[start:end] if result else []
+        result = appointment.get_all_appointments(db)
+        appointment_list = []
+        for res in result:
+            appointment_list.append(
+                {
+                    "appointmen_id": res.appointment_id,
+                    "patient_id": res.patient_id,
+                    "doctor_id": res.doctor_id,
+                    "slot_id": res.slot_id,
+                    "success": res.success,
+                    "remarks": res.remarks
+                }            
+            )
+
+        response.headers["X-Total-Count"] = str(len(result))
+        response.headers["X-Page"] = str(page)
+        response.headers["X-Per-Page"] = str(per_page)
+        request.app.state.redis_client.set(f"appointment/all_appointments", json.dumps(appointment_list))
+
+        return result[start:end] if result else []
 
 
 @router.post("/create_appointment", status_code=status.HTTP_201_CREATED)
@@ -53,6 +74,7 @@ async def create_appointment(appointment_data: AppointmentSchema, request: Reque
         db.add(new_appointment)
         db.commit()
         db.refresh(new_appointment)
+        request.app.state.redis_client.delete(f"appointment/all_appointments") 
         return {"message": "Appointment created successfully", "appointment_id": new_appointment}
     except Exception as e:
         db.rollback()
@@ -64,17 +86,32 @@ async def get_all_slots(request: Request, db: Session=Depends(get_db), authoriza
     # Placeholder for fetching all appointments
     page = pagination["page"]
     per_page = pagination["per_page"]
-    
+    cache = request.app.state.redis_client.get(f"appointment/all_slots")
     start = (page - 1) * per_page
     end = start + per_page
-
-    result = slots.get_all_slots(db)
-    response.headers["X-Total-Count"] = str(len(result))
-    response.headers["X-Page"] = str(page)
-    response.headers["X-Per-Page"] = str(per_page)
+    if cache:
+        data = json.loads(cache)
+        return data[start:end] if data else []
+    else:
     
+        result = slots.get_all_slots(db)
+        response.headers["X-Total-Count"] = str(len(result))
+        response.headers["X-Page"] = str(page)
+        response.headers["X-Per-Page"] = str(per_page)
+        slot_list = []
+        for res in result:
+            slot_list.append(
+                {
+                    "slot_id": res.slot_id,
+                    "doctor_id": res.doctor_id,
+                    "date": res.date.isoformat() if res.date else None,
+                    "time": res.time.isoformat() if res.time else None
+                }
+            )
+        request.app.state.redis_client.set(f"appointment/all_slots", json.dumps(slot_list))
+        
 
-    return result[start:end] if result else []
+        return slot_list[start:end] if result else []
     
 @router.post("/create_slot", status_code=status.HTTP_201_CREATED)
 async def create_slot(slot_data: SlotSchema, request: Request, db: Session = Depends(get_db)):
@@ -89,6 +126,7 @@ async def create_slot(slot_data: SlotSchema, request: Request, db: Session = Dep
         db.add(new_slot)
         db.commit()
         db.refresh(new_slot)
+        request.app.state.redis_client.delete(f"appointment/all_slots") 
         return {"message": "Slot created successfully", "slot_id": new_slot.slot_id}
     except Exception as e:
         db.rollback()
@@ -98,10 +136,25 @@ async def create_slot(slot_data: SlotSchema, request: Request, db: Session = Dep
 @router.get("/get_slots_by_doctor_id/{doctor_id}", status_code=status.HTTP_200_OK)
 async def get_slots_by_doctor_id(doctor_id: int, request: Request, db: Session = Depends(get_db), authorization: str = Header(None)):
     try:
-        slots_by_doctor = slots.get_slot_by_doctor_id(db, doctor_id)
-        if not slots_by_doctor:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No slots found for this doctor")
-        return slots_by_doctor
+        cache = request.app.state.redis_client.get(f"appointment/slots_by_doctor/{doctor_id}")
+        if cache:
+            return json.loads(cache)
+        else:
+            slots_by_doctor = slots.get_slot_by_doctor_id(db, doctor_id)
+            if not slots_by_doctor:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No slots found for this doctor")
+            slot_list = []
+            for slot in slots_by_doctor:
+                slot_list.append(
+                    {
+                        "slot_id": slot.slot_id,
+                        "doctor_id": slot.doctor_id,
+                        "date": slot.date.isoformat() if slot.date else None,
+                        "time": slot.time.isoformat() if slot.time else None
+                    }
+                )
+            request.app.state.redis_client.set(f"appointment/slots_by_doctor/{doctor_id}", json.dumps(slot_list))
+            return slots_by_doctor
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     
@@ -109,10 +162,27 @@ async def get_slots_by_doctor_id(doctor_id: int, request: Request, db: Session =
 @router.get("/get_appointment_by_patient_id/{appointment_id}", status_code=status.HTTP_200_OK)
 async def get_appointment_by_patient_id(appointment_id: int, request: Request, db: Session = Depends(get_db), authorization: str = Header(None)):
     try:
-        appointment_data = appointment.get_appointment_by_patient_id(db, appointment_id)
-        if not appointment_data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
-        return appointment_data
+        cache = request.app.state.redis_client.get(f"appointment/appointment_by_patient/{appointment_id}")
+        if cache:
+            return json.loads(cache)
+        else:
+            appointment_data = appointment.get_appointment_by_patient_id(db, appointment_id)
+            if not appointment_data:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+            appointment_list = []
+            for app in appointment_data:
+                appointment_list.append(
+                    {
+                        "appointment_id": app.appointment_id,
+                        "patient_id": app.patient_id,
+                        "doctor_id": app.doctor_id,
+                        "slot_id": app.slot_id,
+                        "success": app.success,
+                        "remarks": app.remarks
+                    }
+                )
+            request.app.state.redis_client.set(f"appointment/appointment_by_patient/{appointment_id}", json.dumps(appointment_list))
+            return appointment_data
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     

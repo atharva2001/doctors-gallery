@@ -9,6 +9,7 @@ router = APIRouter(
     tags=["doctors"],
 )
 
+
 @router.get("/me", status_code=status.HTTP_200_OK)
 async def get_doctor_info(request: Request, authorization: str = Header(None)):
     # print("here")
@@ -27,28 +28,34 @@ async def get_doctor_info(request: Request, authorization: str = Header(None)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: You are not authorized to access this resource."
         )
-    response = requests.get(
-        url=f"http://auth_service:8000/login/get_user/{id}",
-        headers={"Authorization": f"Bearer {authorization}"}
-    )
-    data = response.json()
-    print(data)
-    user_data = {}
-    user_data["id"] = data[0]
-    user_data["name"] = data[1]
-    user_data["email"] = data[2]
+    
+    cache = request.app.state.redis_client.get(f"doctors/me/{id}")
+    if cache:
+        return json.loads(cache)
+    else:
+        response = requests.get(
+            url=f"http://auth_service:8000/login/get_user/{id}",
+            headers={"Authorization": f"Bearer {authorization}"}
+        )
+        data = response.json()
+        print(data)
+        user_data = {}
+        user_data["id"] = data[0]
+        user_data["name"] = data[1]
+        user_data["email"] = data[2]
 
-    db = request.app.state.client["doctors"]
-    doctors_collection = "doctors_collection"
-    res = await doctors.insert_data(db, doctors_collection, user_data)
-    print(res)
-    return response.json()
+        db = request.app.state.client["doctors"]
+        doctors_collection = "doctors_collection"
+        res = await doctors.insert_data(db, doctors_collection, user_data)
+        print(res)
+        request.app.state.redis_client.set(f"doctors/me/{id}", json.dumps(user_data))
+        return response.json()
 
 @router.put("/me/update", status_code=status.HTTP_200_OK)
 async def update_doctor_info(request: Request, authorization: str = Header(None), user_data: dict = None):
     try:
         response = requests.get(
-            "http://127.0.0.1:8000/verify-token",  
+            "http://auth_service:8000/verify-token",  
             headers={"Authorization": f"Bearer {authorization}"}
         )
         if response.status_code != 200:
@@ -66,6 +73,8 @@ async def update_doctor_info(request: Request, authorization: str = Header(None)
         doctors_collection = "doctors_collection"
         res = await doctors.update_data(db, doctors_collection, user_data)
         print(res)
+        request.app.state.redis_client.delete(f"doctors/me/{user_data['id']}")
+        
         return {"message": "Doctors information updated successfully"}
 
         

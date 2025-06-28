@@ -21,11 +21,11 @@ async def create_user(user: User, request: Request):
         raise HTTPException(status_code=400, detail=response["error"])
     
     jwt_token = jwt_utils.create_access_token(data={"sub": user.email})
-    request.app.state.redis_client.delete(f"get_users")
-    request.app.state.redis_client.delete(f"get_all_users")
+    request.app.state.redis_client.delete("login/get_all_users")
     return {
         "message": "User created successfully",
-        "user_id": user.email,
+        "user_email": user.email,
         "access_token": jwt_token,
         "token_type": "bearer",
+        "role": user.role
     }
