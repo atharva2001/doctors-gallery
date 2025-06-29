@@ -28,7 +28,7 @@ services:
     ports:
       - 27017:27017
     volumes:
-      - ./mongodata:/data/db
+      - ./mongodata:/var/lib/mongodata/db
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: secret
@@ -111,6 +111,7 @@ services:
 
 volumes:
     postgres_data:
+    mongodb_data:
 
 networks:
   health_reminder_network:
