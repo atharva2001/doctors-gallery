@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-WORKDIR /health_reminder_system/core_services
+WORKDIR /health_reminder_system/agenticai_service
 
 # RUN  apt-get update
 
@@ -22,13 +22,13 @@ COPY requirements.txt requirements.txt
 
 RUN pip install -r requirements.txt 
 
-EXPOSE 8001
+EXPOSE 8004
 
 COPY . .
 
 
 # # gunicorn main:app -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000
 
-CMD [ "gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8001" ]
+CMD [ "gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8004" ]
 
 
