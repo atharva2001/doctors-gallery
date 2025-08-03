@@ -124,6 +124,75 @@ services:
     networks:
       - health_reminder_network
 
+  zookeeper:
+    image: wurstmeister/zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    networks:
+      - health_reminder_network
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ADVERTISED_PORT: 9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - health_reminder_network
+
+  notification_service:
+    container_name: notification_service
+    build: notification_service/
+    ports:
+      - 8005:8005
+    depends_on:
+      - kafka
+      - zookeeper
+    volumes:
+    - .:/app
+    networks:
+      - health_reminder_network
+    
+  consumer_service:
+    container_name: consumer_service
+    build: 
+      context: notification_service/
+      dockerfile: Dockerfile.consumer
+    depends_on:
+      - kafka
+    ports:
+      - 8006:8006
+    volumes:
+      - ./notification_service:/health_reminder_system/notification_service
+    networks:
+      - health_reminder_network
+    restart: always
+
+  kafdrop:
+    image: obsidiandynamics/kafdrop
+    container_name: kafdrop
+    restart: always
+    ports:
+      - "9000:9000"
+    environment:
+      KAFKA_BROKERCONNECT: kafka:9092
+      JVM_OPTS: "-Xms32M -Xmx64M"
+    depends_on:
+      - kafka
+    networks:
+      - health_reminder_network  
+
 volumes:
     postgres_data:
     mongodb_data:

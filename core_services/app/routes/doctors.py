@@ -2,7 +2,9 @@ from fastapi import APIRouter, HTTPException, Request, Header
 from starlette import status
 import requests
 import json
+from fastapi.encoders import jsonable_encoder
 from app.database import doctors
+
 
 router = APIRouter(
     prefix="/doctors",
@@ -37,19 +39,20 @@ async def get_doctor_info(request: Request, authorization: str = Header(None)):
             url=f"http://auth_service:8000/login/get_user/{id}",
             headers={"Authorization": f"Bearer {authorization}"}
         )
+        # print("Logging response from auth service:", response.json())
         data = response.json()
         print(data)
         user_data = {}
-        user_data["id"] = data[0]
-        user_data["name"] = data[1]
-        user_data["email"] = data[2]
+        user_data["id"] = str(data["id"])
+        user_data["name"] = str(data["username"])
+        user_data["email"] = str(data["email"])
 
         db = request.app.state.client["doctors"]
         doctors_collection = "doctors_collection"
         res = await doctors.insert_data(db, doctors_collection, user_data)
         print(res)
         request.app.state.redis_client.set(f"doctors/me/{id}", json.dumps(user_data))
-        return response.json()
+        return {"message": "Doctor information retrieved successfully", "data": jsonable_encoder(user_data)}
 
 @router.put("/me/update", status_code=status.HTTP_200_OK)
 async def update_doctor_info(request: Request, authorization: str = Header(None), user_data: dict = None):

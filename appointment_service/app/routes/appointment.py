@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Header, Query, Response
-from app.model.appointment import Appointment as AppointmentSchema
-from app.model.slots import Slot as SlotSchema
+from app.model.appointment import Appointment as AppointmentSchema, AppointmentNotification
+from app.model.slots import Slot as SlotSchema, SlotNotification
 from starlette import status
 from app.database import appointment, slots
 from sqlalchemy.orm import Session
@@ -8,6 +8,7 @@ from app.database.core import get_db
 from app.database.appointment import Appointment as AppointmentModel
 from app.database.slots import Slot as SlotModel
 import json
+import requests
 
 router = APIRouter(
     prefix="/appointments",
@@ -75,6 +76,11 @@ async def create_appointment(appointment_data: AppointmentSchema, request: Reque
         db.commit()
         db.refresh(new_appointment)
         request.app.state.redis_client.delete(f"appointment/all_appointments") 
+        app_notify = AppointmentNotification(
+            key="new_appointment",
+            content=f"New appointment created: {new_appointment.appointment_id} for patient {new_appointment.patient_id} with doctor {new_appointment.doctor_id} at slot {new_appointment.slot_id}"
+        )
+        response = requests.post(f"http://notification_service:8005/create_message?topic=new_doc_notifier&message={str(app_notify)}")
         return {"message": "Appointment created successfully", "appointment_id": new_appointment}
     except Exception as e:
         db.rollback()
@@ -127,6 +133,11 @@ async def create_slot(slot_data: SlotSchema, request: Request, db: Session = Dep
         db.commit()
         db.refresh(new_slot)
         request.app.state.redis_client.delete(f"appointment/all_slots") 
+        slot_notify = SlotNotification(
+            key="new_slot",
+            content=f"New slot created: {new_slot.slot_id} for doctor {new_slot.doctor_id} on {new_slot.date} at {new_slot.time}"
+        )
+        response = requests.post(f"http://notification_service:8005/create_message?topic=new_doc_notifier&message={str(slot_notify)}")
         return {"message": "Slot created successfully", "slot_id": new_slot.slot_id}
     except Exception as e:
         db.rollback()

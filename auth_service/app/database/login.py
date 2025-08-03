@@ -5,9 +5,10 @@ async def get_user_by_id(cursor, id):
     """
     cursor.execute(query, (id,))
     result = cursor.fetchone()
+    columns = [desc[0] for desc in cursor.description]
     cursor.close()
     if result:
-        return result
+        return dict(zip(columns, result)) 
     else:
         return {"error": "User not found."}
 

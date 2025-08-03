@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import List, TypedDict
 from pydantic import BaseModel
 
 class Appointment(BaseModel):
@@ -14,4 +14,9 @@ class Appointment(BaseModel):
         from_attributes = True
         validate_by_name = True
         arbitrary_types_allowed = True
+
+
+class AppointmentNotification(TypedDict):
+    key: str
+    content: str
    

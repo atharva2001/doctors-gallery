@@ -1,5 +1,5 @@
 from datetime import date, time
-from typing import List
+from typing import List, TypedDict
 from pydantic import BaseModel
 
 class Slot(BaseModel):
@@ -13,3 +13,8 @@ class Slot(BaseModel):
         from_attributes = True
         validate_by_name = True
         arbitrary_types_allowed = True
+
+
+class SlotNotification(TypedDict):
+    key: str
+    content: str
